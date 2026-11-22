@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+:root {
+  --paper: oklch(96.6% 0.018 147);
+  --ink: oklch(27% 0.039 147);
+  --muted: oklch(44% 0.047 147);
+  --panel: oklch(98.5% 0.01 147);
+  --line: oklch(83.5% 0.038 147);
+  --accent: oklch(73% 0.132 147);
+  --accent-ink: oklch(26% 0.069 147);
+  --accent-soft: oklch(92.5% 0.07 147);
+  --nav: oklch(24% 0.035 147);
+  --nav-ink: oklch(93% 0.039 147);
+  --display: 'Barlow Condensed', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* manufacturing */
+.hero { outline: 1px solid var(--line); outline-offset:-7px; } .plot {border-top:4px solid var(--accent-soft)}
+.table-wrap tbody tr:nth-child(even) { background-color: color-mix(in oklch, var(--accent-soft) 22%, var(--panel)); }
+.metrics, .table-wrap {font-variant-numeric:tabular-nums;}
