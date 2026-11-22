@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from sqlalchemy import and_, or_, select
 from src.config.database import Session
 from src.constants.enums import Status
-from src.domain.analysis import analyze
+from src.domain.analysis import stream_analysis
 from src.domain.spec import SPEC
 from src.models.jobs import Delivery, Run, Schedule
 from src.models.source import Dataset
@@ -58,14 +58,32 @@ def claim():
         job.attempt += 1
         job.lease_until = stamp + timedelta(minutes=3)
         records = db.get(Dataset, job.dataset_id).rows
-        return job.id, job.attempt, records, job.params
+        return job.id, job.attempt, records, job.params, job.progress
+
+
+def _save_checkpoint(job_id, attempt, progress):
+    """每组算完即落库；租约被别的进程接管时放弃写入。"""
+    with Session.begin() as db:
+        job = db.get(Run, job_id, with_for_update=True)
+        if job.attempt != attempt or job.status != Status.RUNNING:
+            return False
+        job.progress = progress
+        record(db, 'worker', 'analysis.checkpoint', job_id,
+               groups=f"{len(progress['groups'])}/{progress['total_groups']}")
+        return True
 
 
 def execute(lease):
-    job_id, attempt, rows, params = lease
+    job_id, attempt, rows, params, checkpoint = lease
     result = export = failure = None
+    progress = checkpoint
     try:
-        result = analyze(rows, params)
+        for outcome, snapshot in stream_analysis(rows, params, checkpoint):
+            progress = snapshot
+            if outcome is None and not _save_checkpoint(job_id, attempt, snapshot):
+                # 租约已被重试进程接管，本进程停止，避免重复核算与重复发布。
+                return
+        result = outcome
         export = write_report(job_id, attempt, result)
     except ValueError as error:
         failure = str(error)[:500]
@@ -80,13 +98,19 @@ def execute(lease):
         job.finished_at = now()
         job.status = Status.FAILED if failure else Status.COMPLETE
         job.result = None if failure else result
+        # 保留最后一个检查点，重试时已完成的单元不重复核算。
+        job.progress = progress
         job.export_file = export
         job.error = failure
-        record(db, 'worker', f'analysis.{job.status}', job.id, attempt=attempt, reason=failure)
-        if job.schedule_id:
+        record(db, 'worker', f'analysis.{job.status}', job_id, attempt=attempt, reason=failure)
+        if job.schedule_id and not failure:
             plan = db.get(Schedule, job.schedule_id)
-            ready = not failure and result.get('ready', True)
-            detail = '已保存 CSV 到站内收件箱' if ready else (failure or result['headline'])
-            receipt = Delivery(run_id=job.id, recipient=plan.recipient, state='delivered' if ready else 'blocked', detail=detail[:500])
-            db.add(receipt)
-            record(db, 'worker', f'delivery.{receipt.state}', job.id, recipient=plan.recipient)
+            ready = result.get('ready', True)
+            detail = '已保存 CSV 到站内收件箱' if ready else result['headline']
+            # 重试不重复发布：同一运行只保留一条站内回执。
+            exists = db.scalar(select(Delivery.id).where(Delivery.run_id == job.id))
+            if exists is None:
+                receipt = Delivery(run_id=job.id, recipient=plan.recipient,
+                                   state='delivered' if ready else 'blocked', detail=detail[:500])
+                db.add(receipt)
+                record(db, 'worker', f'delivery.{receipt.state}', job.id, recipient=plan.recipient)

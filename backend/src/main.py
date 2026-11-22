@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from scripts.seed_demo import seed
 from src.config.database import Base, engine
 from src.config.settings import SEED_DEMO
@@ -13,9 +13,26 @@ from src.utils.wakeup import broker
 log = logging.getLogger(__name__)
 
 
+def ensure_columns():
+    """仅补建新增列，不改动既有数据；JSON 列按数据库方言选择类型。"""
+    inspector = inspect(engine)
+    if 'runs' not in inspector.get_table_names():
+        return
+    existing = {column['name'] for column in inspector.get_columns('runs')}
+    if 'progress' in existing:
+        return
+    ddl = 'ALTER TABLE runs ADD COLUMN progress JSON NULL'
+    if engine.dialect.name == 'sqlite':
+        ddl = 'ALTER TABLE runs ADD COLUMN progress JSON'
+    with engine.begin() as connection:
+        connection.execute(text(ddl))
+    log.info('Added runs.progress checkpoint column')
+
+
 @asynccontextmanager
 async def lifespan(_app):
     Base.metadata.create_all(engine)
+    ensure_columns()
     if SEED_DEMO:
         try:
             log.info('Seeded %s', seed())

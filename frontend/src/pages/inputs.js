@@ -39,7 +39,7 @@ export async function inputs(route, refresh) {
   })},field({key:'batch_name',label:'批次名称',type:'string',max_length:120}),
     el('label',{class:'field',for:'source'}, el('span',{},'业务 CSV'),el('input',{id:'source',type:'file',name:'source',accept:'.csv,text/csv',required:true})), submit);
   return el('div',{class:'two-col'},el('div',{class:'wide-panel'},preview),el('aside',{class:'sidebar-panel'},
-    panel('数据导入',p('导入后保留原批次和校验指纹，可用同一份数据复跑。','subtle'),sample,upload,error),
+    panel('数据导入',p('导入后保留原批次和校验指纹，可用同一份数据复跑。未测特征单列填写并以问号结尾，指定打样组留空时按切树候选组核算。','subtle'),sample,upload,error),
     panel('字段说明',el('dl',{class:'dictionary'},spec.fields.map(item=>el('div',{},el('dt',{},item.label),
       el('dd',{},item.key,item.required === false ? ' · 可空' : ' · 必填',item.options ? ` · ${item.options.join(' / ')}` : '')))))));
 }
